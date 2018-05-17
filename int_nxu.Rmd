@@ -1,0 +1,337 @@
+---
+title: "Interactive Visualization"
+author: "Ningyin Xu"
+date: "5/15/2018"
+output: 
+  flexdashboard::flex_dashboard:
+    vertical_layout: scroll
+    orientation: rows
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE,
+                      warning = FALSE,
+                      echo = FALSE,
+                      cache = F)
+library(ggplot2)
+library(tidyverse)
+library(readstata13)
+library(plotly)
+library(flexdashboard)
+library(tidyverse)
+library(shiny)
+library(stringr)
+theme_set(theme_minimal())
+```
+
+
+```{r data, eval=F}
+dat <- read.dta13("data/ind_w_parents_wolabel_2010.dta",
+                  missing.type = T,
+                  nonint.factors = T,
+                  generate.factors = T) %>%
+  select(urban, gender, qa1age, qa2, qc1,
+         qk601, qk601_f, qk601_m, feduc, meduc,
+         qm401, qm401_f, qm401_m) %>%
+  rename(age = qa1age, hukou = qa2, educ = qc1,
+         inc = qk601, fatherinc = qk601_f,
+         motherinc = qk601_m, incdist = qm401,
+         fatherincdist = qm401_f, motherincdist = qm401_m) %>%
+  filter(urban>=0 & gender>=0 & age >= 0 & hukou >= 0 & educ >= 0 & inc >= 0 & fatherinc >= 0 & motherinc >=0 & feduc >= 0 & meduc >= 0 & incdist >= 0 & fatherincdist >= 0 & motherincdist >= 0) %>%
+  mutate(parentsinc = fatherincdist + motherincdist,
+         parentsinc = as.factor(parentsinc))
+
+mobility <- dat %>% select(gender, urban, incdist, parentsinc) %>%
+  rename(from_q = parentsinc, to_q = incdist) 
+
+mobility_tot <- as.data.frame(rename(count(mobility, from_q, to_q), Freq=n))
+mobility_bygender <- as.data.frame(rename(count(mobility, from_q, to_q, gender), Freq=n))
+mobility_byurban <- as.data.frame(rename(count(mobility, from_q, to_q, urban), Freq=n))
+
+mobility_totlist = list()
+mobility_genderlist = list()
+mobility_urbanlist = list()
+
+for (i in 2:10) {
+  inc <- mobility_tot %>% filter(from_q == i)
+  inc <- inc %>% 
+    mutate(weights = Freq/sum(inc$Freq),
+           type = as.character(to_q)) %>%
+    select(weights, type)
+    
+  inc_sim <- data.frame(
+    f = seq(1,20,1),
+    x = seq(0,1,length.out = 20),
+    y1 = seq(i,2,length.out = 20),
+    y2 = seq(i,4,length.out = 20),
+    y3 = seq(i,6,length.out = 20),
+    y4 = seq(i,8,length.out = 20),
+    y5 = seq(i,10,length.out = 20)
+  ) %>%
+    gather(key="type", value="value", y1:y5) %>%
+    transform(type = str_replace(type, "y", "")) %>%
+    left_join(., inc, by = "type") 
+  
+  mobility_totlist[[length(mobility_totlist)+1]] = inc_sim
+  
+  inc <- mobility_bygender %>% filter(from_q == i)
+  inc <- inc %>% 
+    mutate(weights = Freq/sum(inc$Freq),
+           type = as.character(to_q),
+           gender = ifelse(gender==0, "f", "m")) %>%
+    select(weights, type, gender)
+    
+  inc_sim <- data.frame(
+    f = seq(1,20,1),
+    x = seq(0,1,length.out = 20),
+    y1.f = seq(i,2,length.out = 20)+0.1,
+    y2.f = seq(i,4,length.out = 20)+0.1,
+    y3.f = seq(i,6,length.out = 20)+0.1,
+    y4.f = seq(i,8,length.out = 20)+0.1,
+    y5.f = seq(i,10,length.out = 20)+0.1,
+    y1.m = seq(i,2,length.out = 20)-0.1,
+    y2.m = seq(i,4,length.out = 20)-0.1,
+    y3.m = seq(i,6,length.out = 20)-0.1,
+    y4.m = seq(i,8,length.out = 20)-0.1,
+    y5.m = seq(i,10,length.out = 20)-0.1
+  ) %>%
+    gather(key="type", value="value", y1.f:y5.m) %>%
+    mutate(gender = ifelse(substr(type, 4,5) == "f", "f", "m")) %>%
+    transform(type = str_replace(type, "y", "")) %>%
+    transform(type = str_replace(type, ".f", "")) %>%
+    transform(type = str_replace(type, ".m", "")) %>%
+    left_join(., inc, by = c("type","gender"))
+  
+  mobility_genderlist[[length(mobility_genderlist)+1]] = inc_sim
+
+  inc <- mobility_byurban %>% filter(from_q == i)
+  inc <- inc %>% 
+    mutate(weights = Freq/sum(inc$Freq),
+           type = as.character(to_q),
+           urban = ifelse(urban==0, "r", "u")) %>%
+    select(weights, type, urban)
+    
+  inc_sim <- data.frame(
+    f = seq(1,20,1),
+    x = seq(0,1,length.out = 20),
+    y1.r = seq(i,2,length.out = 20)+0.1,
+    y2.r = seq(i,4,length.out = 20)+0.1,
+    y3.r = seq(i,6,length.out = 20)+0.1,
+    y4.r = seq(i,8,length.out = 20)+0.1,
+    y5.r = seq(i,10,length.out = 20)+0.1,
+    y1.u = seq(i,2,length.out = 20)-0.1,
+    y2.u = seq(i,4,length.out = 20)-0.1,
+    y3.u = seq(i,6,length.out = 20)-0.1,
+    y4.u = seq(i,8,length.out = 20)-0.1,
+    y5.u = seq(i,10,length.out = 20)-0.1
+  ) %>%
+    gather(key="type", value="value", y1.r:y5.u) %>%
+    mutate(urban = ifelse(substr(type, 4,5) == "r", "r", "u")) %>%
+    transform(type = str_replace(type, "y", "")) %>%
+    transform(type = str_replace(type, ".r", "")) %>%
+    transform(type = str_replace(type, ".u", "")) %>%
+    left_join(., inc, by = c("type","urban"))
+  
+  mobility_urbanlist[[length(mobility_urbanlist)+1]] = inc_sim
+}
+
+tot_inc <- mobility_tot %>% mutate(weights = Freq/sum(mobility_tot$Freq), type = as.character(c(1:43))) %>%
+  select(weights, type)
+
+tot_inc_sim <- matrix(seq(1,20,1), ncol = 1)
+tot_inc_sim <- cbind(tot_inc_sim, seq(0,1,length.out = 20))
+
+for (i in 2:10) {
+  for (j in seq(2,10,by=2)) {
+    tot_inc_sim <- cbind(tot_inc_sim, seq(i,j, length.out = 20))
+  }
+}
+
+tot_inc_sim <- as.data.frame(tot_inc_sim)
+
+tot_inc_sim <- tot_inc_sim %>% 
+  rename(f=V1, x=V2) %>%
+  gather(key="type", value="value", -f, -x) %>%
+  transform(type = str_replace(type, "V", "")) %>%
+  left_join(., tot_inc, by = "type")
+
+save(tot_inc_sim, mobility_totlist, mobility_genderlist, mobility_urbanlist,
+     file = "./mobility.RData")
+
+```
+
+# Introduction
+
+This project intends to look at **Intergenrational Income Mobility in China**. We want to inspect how income/wealth are being transferred across generations in China, and find possible explanations behind it. 
+
+We used data from China Family Panel Studies (CFPS), in this interactive assignment, we only used data for year 2010. With information about individuals' income, gender, living area (urban or rural), and their parents' income, we are able to generate a set of graphs that allow us to see the trend of income transfer. After data cleaning, we have about 3000 observations in our data set. One important variable for this project is: which percentile is the individual's income in. Ideally we would want additional Census data on income to generate this variable for each individual. However, CFPS offers a factor variable "income comparing to local median income", which might not be accurate for our purpose. But to see the general trend, this is sufficient. And because this variable is individually reported, we use the sum of parents' income distribution to represent the family income distribution.
+
+We first look at the whole sample, try to see the total trend. Then we offer the option to look at individuals from families with different level of wealthiness, and group them by gender or by living area. This, we hope, can give us an impression on the situation.
+
+# Intergenerational Income Mobility in China
+
+Input {.sidebar}
+----------------------------------
+
+```{r}
+selectizeInput(inputId = "inputIncome",
+               label = "Choose a specific Parent's Income Percentile to Inspect",
+               choices = c("All", "..."),
+               multiple = F)
+```
+
+Additional Input {.conditional}
+
+```{r}
+conditionalPanel(
+  condition = "input.inputIncome == '...'",
+  sliderInput(inputId = "inputFamilyIncome",
+    label = "Parent's Summed Income Percentile",
+    min = 2,
+    max = 10,
+    sep = "",
+    step = 1,
+    value = 2), 
+    selectizeInput(inputId = "inputType",
+    label = "Select Gender or Area to Inspect",
+    choices = c(" ", "Gender", "Area"),
+    multiple = F))
+
+```
+    
+    
+Column
+----------------------------------
+
+```{r}
+load("./mobility.RData")
+parentsinc <- c("Parents both from 20% income distribution",
+                "Parents are from 20% and 40% income distribution", "Parents both from 40% income distribution",
+                "Parents are from 40% and 60% income distribution", "Parents both from 60% income distribution",
+                "Parents are from 60% and 80% income distribution", "Parents both from 80% income distribution",
+                "Parents are from 80% and 100% income distribution", "Parents both from 100% income distribution")
+
+
+plotlyOutput("MobilityPlot", height = "auto", width = "auto")
+
+output$MobilityPlot <- renderPlotly({
+  m <- list(
+  l = 50,
+  r = 50,
+  b = 100,
+  t = 100,
+  pad = 4
+  )
+  if (input$inputIncome == "All") {
+    p <- tot_inc_sim %>%
+        plot_ly(
+          x = ~x,
+          y = ~value,
+          size = ~weights,
+          color = ~type,
+          frame = ~f,
+          type = 'scatter',
+          mode = 'markers',
+          showlegend = F,
+          alpha = 0.5
+        ) %>%
+        layout(
+          title = paste("Intergenrational Mobility: All Income Family"),
+          xaxis = list(title="Simulated Time Frame (Size of the bubble is Density)"),
+          yaxis = list(title="Family Income Distribution"),
+          autosize = F, width = 825, height = 500, margin = m
+        ) %>%
+        animation_slider(hide = T)
+  }
+  else if (input$inputType == " ") {
+      inc_sim <- mobility_totlist[[input$inputFamilyIncome - 1]]
+      p <- inc_sim %>%
+        plot_ly(
+          x = ~x,
+          y = ~value,
+          size = ~weights,
+          frame = ~f,
+          type = 'scatter',
+          mode = 'markers',
+          showlegend = F,
+          alpha = 0.5
+        ) %>%
+        layout(
+          title = paste("Intergenrational Mobility: ", parentsinc[input$inputFamilyIncome - 1]),
+          xaxis = list(title="Simulated Time Frame (Size of the bubble is Density)"),
+          yaxis = list(title="Income Distribution"),
+          autosize = F, width = 825, height = 500, margin = m
+        ) %>%
+        animation_slider(hide = T) 
+    }
+    else if (input$inputType == "Gender") {
+      inc_sim <- mobility_genderlist[[input$inputFamilyIncome - 1]]
+      p <- inc_sim %>%
+        plot_ly(
+          x = ~x,
+          y = ~value,
+          size = ~weights,
+          color = ~gender,
+          frame = ~f,
+          type = 'scatter',
+          mode = 'markers',
+          showlegend = T,
+          alpha = 0.5
+        ) %>%
+        layout(
+          title = paste("Intergenrational Mobility: ", parentsinc[input$inputFamilyIncome - 1]),
+          xaxis = list(title="Simulated Time Frame (Size of the bubble is Density)"),
+          yaxis = list(title="Income Distribution"),
+          autosize = F, width = 825, height = 500, margin = m
+        ) %>%
+        animation_slider(hide = T) 
+    }
+    else if (input$inputType == "Area") {
+      inc_sim <- mobility_urbanlist[[input$inputFamilyIncome - 1]]
+      p <- inc_sim %>%
+      plot_ly(
+        x = ~x,
+        y = ~value,
+        size = ~weights,
+        color = ~urban,
+        frame = ~f,
+        type = 'scatter',
+        mode = 'markers',
+        showlegend = T,
+        alpha = 0.5
+      ) %>%
+        layout(
+          title = paste("Intergenrational Mobility: ", parentsinc[input$inputFamilyIncome - 1]),
+          xaxis = list(title="Simulated Time Frame (Size of the bubble is Density)"),
+          yaxis = list(title="Income Distribution"),
+          autosize = F, width = 825, height = 500, margin = m
+        ) %>%
+        animation_slider(hide = T)
+    }
+
+  ggplotly(p, tooltip = "text")
+  })
+  
+```
+
+# Explanation
+
+From the whole sample graph, one could see: families in our data sets are mostly from low to medium income percentiles, and their children end up being in the high income and low income percentiles. This shows that in our data set, there is a trend of stronger income gap over time. And when we break it down to look at family from different income percentiles: One can see for individuals from the lowest income percentile (parents both from lower than 20% percentile) have almost equivalent chance landing in the middle as in the lower tail. And this stays the same for other groups who are below group 6 (the median). This shows a low upward mobility for all our samples. And looking at individuals coming from the highest income distribution, they tend to end up being in the highest tail as well. Thus the downward mobility seems to be low as well.
+
+Looking at the set of graph grouped by gender, we don't see a huge difference in terms of income mobility between two genders, although we do see there are more males in the data set. Thus our sample is biased in gender.
+
+For urban and rural difference, we see from the graphs that in the highest family income tail (for example, group 9), there are way more individuals who are living in the urban areas. But looking at groups with lower family income, we see lower downward mobility for individual in rural areas. This means that they're more likely to have similar income as their parents. This is potentially suggesting a smaller income gap between urban and rural areas in China.
+
+We still have more things to do to make sense of these findings. For example, we need better measurement for income distribution, and other variables to control the potential influence. That's the work for our final project. So for now, I will defend my visualization choices.
+
+The idea of my visualization comes from the *nytimes* article on upward mobility in the US. Although I couldn't figure out how to do a visualization as good as the ones from that article, I tried my best with the skills I learnt from this class and am proud of the results. My main consideration is (1) the X's and Y's are both discrete, and (2) the core concept here is the trend. Thus I want to have an animated visualization, with a bunch of data jumping on a "fake" time frame, to capture the income transfer. *Plotly* with scatter point is my best choice. However, I had trouble in finding a way to show the density of each income-transfer path. In the *nytimes* article, they used number of points to capture the density, and it is very functional, but yet hard to do (I couldn't find their code). Instead, I used bubble plot, with the size of the points showing the density. This worked, to some degree. One can easily tell which group has the most people, but the difference between each group is not that easy to find.
+
+The interactive part of this project is mainly showed in the sidebar. There are multiple choices offered to users. I used conditional panel because it kind of force the user to look at the national, general trend at first, and then let them customize based on their interest. The "group-by" options are included in the drop-down menu and the choices for family income level are in a slider, which I think makes most sense considering the choice range we have. These interactive features together tells the story from top to bottom, general to detail. 
+
+
+
+
+
+
+
